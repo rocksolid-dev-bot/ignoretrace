@@ -34,3 +34,43 @@ git -C "$FIXTURES_DIR/basic" add -A
 git -C "$FIXTURES_DIR/basic" commit -q -m "fixture: basic tree" --allow-empty
 
 echo "fixture 'basic' built at $FIXTURES_DIR/basic"
+
+# Fixture "patterns" — root .gitignore only, no nested ignore file (nested
+# precedence is day 3 and must not leak in here). Exercises unanchored "**"
+# in its three positions, "?", and character classes, including at least
+# one unanchored-wildcard-in-root-deciding-a-nested-path case (mistake 63),
+# which "basic" never has.
+rm -rf "$FIXTURES_DIR/patterns"
+mkdir -p "$FIXTURES_DIR/patterns/src" \
+         "$FIXTURES_DIR/patterns/a/b/cache" \
+         "$FIXTURES_DIR/patterns/logs/2026" \
+         "$FIXTURES_DIR/patterns/doc/x/y"
+
+git -C "$FIXTURES_DIR/patterns" init -q
+git -C "$FIXTURES_DIR/patterns" config user.email "fixture@ignoretrace.local"
+git -C "$FIXTURES_DIR/patterns" config user.name "ignoretrace fixtures"
+
+cat > "$FIXTURES_DIR/patterns/.gitignore" <<'EOF'
+*.tmp
+**/cache/
+logs/**
+doc/**/draft.md
+file?.txt
+report[0-9].txt
+EOF
+
+echo "tmp"      > "$FIXTURES_DIR/patterns/src/notes.tmp"
+echo "obj"      > "$FIXTURES_DIR/patterns/a/b/cache/x.o"
+echo "log"      > "$FIXTURES_DIR/patterns/logs/2026/jan.txt"
+echo "draft"    > "$FIXTURES_DIR/patterns/doc/x/y/draft.md"
+echo "f1"       > "$FIXTURES_DIR/patterns/file1.txt"
+echo "r7"       > "$FIXTURES_DIR/patterns/report7.txt"
+echo "final"    > "$FIXTURES_DIR/patterns/doc/x/y/final.md"
+echo "fab"      > "$FIXTURES_DIR/patterns/fileAB.txt"
+echo "rx"       > "$FIXTURES_DIR/patterns/reportX.txt"
+echo "keep"     > "$FIXTURES_DIR/patterns/keep.txt"
+
+git -C "$FIXTURES_DIR/patterns" add -A
+git -C "$FIXTURES_DIR/patterns" commit -q -m "fixture: patterns tree" --allow-empty
+
+echo "fixture 'patterns' built at $FIXTURES_DIR/patterns"
