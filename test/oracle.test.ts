@@ -149,3 +149,69 @@ describe("oracle: parseIgnoreFile + matchPath vs git check-ignore", () => {
     },
   );
 });
+
+/**
+ * Day 2: the full pattern grammar, against the "patterns" fixture (root
+ * .gitignore only, no nested file — see test/fixture-shape.test.ts for why
+ * it exists). Each feature gets a hit and its near-miss as two separate
+ * assertions, not one line joined by "or" (mistake 61).
+ */
+describe("oracle: pattern grammar (**, ?, character classes) vs git check-ignore", () => {
+  const patternsRoot = path.join(__dirname, "fixtures", "patterns");
+  let patternRules: IgnoreLine[];
+
+  beforeAll(() => {
+    const text = readFileSync(path.join(patternsRoot, ".gitignore"), "utf8");
+    patternRules = parseIgnoreFile(text);
+  });
+
+  it("src/notes.tmp is ignored by the unanchored *.tmp", () => {
+    expect(gitVerdictIgnored(patternsRoot, "src/notes.tmp")).toBe(true);
+    expect(ignoredVerdict(patternRules, "src/notes.tmp", false)).toBe(true);
+  });
+
+  it("a/b/cache/x.o is ignored by **/cache/ (leading **)", () => {
+    expect(gitVerdictIgnored(patternsRoot, "a/b/cache/x.o")).toBe(true);
+    expect(ignoredVerdict(patternRules, "a/b/cache/x.o", false)).toBe(true);
+  });
+
+  it("logs/2026/jan.txt is ignored by logs/** (trailing **)", () => {
+    expect(gitVerdictIgnored(patternsRoot, "logs/2026/jan.txt")).toBe(true);
+    expect(ignoredVerdict(patternRules, "logs/2026/jan.txt", false)).toBe(true);
+  });
+
+  it("doc/x/y/draft.md is ignored by doc/**/draft.md (mid **); doc/x/y/final.md is not", () => {
+    expect(gitVerdictIgnored(patternsRoot, "doc/x/y/draft.md")).toBe(true);
+    expect(ignoredVerdict(patternRules, "doc/x/y/draft.md", false)).toBe(true);
+    expect(gitVerdictIgnored(patternsRoot, "doc/x/y/final.md")).toBe(false);
+    expect(ignoredVerdict(patternRules, "doc/x/y/final.md", false)).toBe(false);
+  });
+
+  it("file1.txt is ignored by file?.txt; fileAB.txt is not (two chars, not one)", () => {
+    expect(gitVerdictIgnored(patternsRoot, "file1.txt")).toBe(true);
+    expect(ignoredVerdict(patternRules, "file1.txt", false)).toBe(true);
+    expect(gitVerdictIgnored(patternsRoot, "fileAB.txt")).toBe(false);
+    expect(ignoredVerdict(patternRules, "fileAB.txt", false)).toBe(false);
+  });
+
+  it("report7.txt is ignored by report[0-9].txt; reportX.txt is not (outside the class)", () => {
+    expect(gitVerdictIgnored(patternsRoot, "report7.txt")).toBe(true);
+    expect(ignoredVerdict(patternRules, "report7.txt", false)).toBe(true);
+    expect(gitVerdictIgnored(patternsRoot, "reportX.txt")).toBe(false);
+    expect(ignoredVerdict(patternRules, "reportX.txt", false)).toBe(false);
+  });
+
+  it("keep.txt matches nothing — the plain near-miss", () => {
+    expect(gitVerdictIgnored(patternsRoot, "keep.txt")).toBe(false);
+    expect(ignoredVerdict(patternRules, "keep.txt", false)).toBe(false);
+  });
+
+  it("src/notes.tmp is matched by the root *.tmp, winning rule is .gitignore line 1", () => {
+    const expected = gitWinningRule(patternsRoot, "src/notes.tmp");
+    expect(expected).not.toBeNull();
+    expect(expected!.line).toBe(1);
+    const winner = winningRule(patternRules, "src/notes.tmp", false);
+    expect(winner).not.toBeNull();
+    expect(winner!.line).toBe(1);
+  });
+});

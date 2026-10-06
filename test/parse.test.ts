@@ -72,4 +72,20 @@ describe("parseIgnoreFile", () => {
       negated: false,
     });
   });
+
+  // Measured directly against git (scratch repo, not assumed from a
+  // description — mistake 9): `git check-ignore -v` on "foo.txt   " shows
+  // the pattern as "foo.txt" (trailing spaces stripped) and matches a
+  // file named "foo.txt"; "bar.txt\ " shows "bar.txt\ " and matches only
+  // a file literally named "bar.txt " (trailing space kept, backslash
+  // consumed) — not "bar.txt" without it.
+  it("strips unescaped trailing spaces from a pattern", () => {
+    const result = parseIgnoreFile("foo.txt   ");
+    expect(result[0]).toMatchObject({ pattern: "foo.txt" });
+  });
+
+  it("keeps a backslash-escaped trailing space literal, consuming the backslash", () => {
+    const result = parseIgnoreFile("bar.txt\\ ");
+    expect(result[0]).toMatchObject({ pattern: "bar.txt " });
+  });
 });

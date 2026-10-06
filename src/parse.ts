@@ -31,6 +31,36 @@ export interface IgnoreLine {
  *  - "**", character classes, and other grammar are out of scope for day 1
  *    (BRIEF.md / TODAY.md item 3, note 5).
  */
+/**
+ * Measured against git directly (not assumed from a description, mistake
+ * 9): trailing spaces/tabs are stripped unless escaped with a backslash,
+ * in which case the backslash is consumed and the space is kept literal
+ * — `foo.txt   ` ignores `foo.txt`, but `foo.txt\ ` (escaped) ignores only
+ * the literal `foo.txt ` (trailing space and all), not `foo.txt`. Leading
+ * whitespace is unaffected by this function; it is trimmed separately by
+ * the caller, matching day-1 behavior (out of today's scope).
+ */
+function stripTrailingUnescapedSpaces(s: string): string {
+  let result = s;
+  while (result.length > 0 && (result.endsWith(" ") || result.endsWith("\t"))) {
+    let backslashes = 0;
+    let idx = result.length - 2;
+    while (idx >= 0 && result[idx] === "\\") {
+      backslashes++;
+      idx--;
+    }
+    if (backslashes % 2 === 1) {
+      // The trailing space is escaped: drop the one backslash that
+      // escapes it, keep the space itself, and stop — git does not
+      // cascade past an escaped space to strip further ones behind it.
+      result = result.slice(0, result.length - 2) + result.slice(result.length - 1);
+      break;
+    }
+    result = result.slice(0, -1);
+  }
+  return result;
+}
+
 export function parseIgnoreFile(text: string): IgnoreLine[] {
   const lines = text.split(/\r\n|\n|\r/);
   // A trailing newline produces one extra empty element after split; drop
@@ -42,7 +72,7 @@ export function parseIgnoreFile(text: string): IgnoreLine[] {
 
   return lines.map((raw, index) => {
     const line = index + 1;
-    const trimmed = raw.trim();
+    const trimmed = stripTrailingUnescapedSpaces(raw.replace(/^[ \t]+/, ""));
 
     if (trimmed === "") {
       return { line, raw, kind: "blank" as const };
