@@ -39,4 +39,37 @@ describe("parseIgnoreFile", () => {
     const result = parseIgnoreFile(input);
     expect(result[1].kind).toBe("blank");
   });
+
+  it("parses the basic fixture's rule flags exactly", () => {
+    const input = "build/\n!build/keep.txt\n*.log\n!important.log";
+    const result = parseIgnoreFile(input);
+    expect(result[0]).toMatchObject({
+      pattern: "build",
+      directoryOnly: true,
+      negated: false,
+    });
+    expect(result[1]).toMatchObject({
+      pattern: "build/keep.txt",
+      negated: true,
+      anchored: true,
+    });
+    expect(result[2]).toMatchObject({
+      pattern: "*.log",
+      anchored: false,
+    });
+    expect(result[3]).toMatchObject({
+      pattern: "important.log",
+      negated: true,
+      anchored: false,
+    });
+  });
+
+  it("resolves an escaped leading '!' to a literal, non-negated pattern", () => {
+    const input = "\\!literal";
+    const result = parseIgnoreFile(input);
+    expect(result[0]).toMatchObject({
+      pattern: "!literal",
+      negated: false,
+    });
+  });
 });
