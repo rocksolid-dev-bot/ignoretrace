@@ -1,0 +1,79 @@
+=== step 0: versions ===
+hostname: 8fd122f88e7d
+v18.19.1
+git version 2.43.0
+
+=== item 1: orphan guard — green run ===
+exit=0
+--- class breakdown (green) ---
+(no output above = zero errors)
+
+=== item 1: orphan guard — red run (unused import injected) ===
+test/parse.test.ts(1,1): error TS6133: 'path' is declared but its value is never read.
+exit=2
+--- class breakdown (red) ---
+      1 TS6133
+(reverted test/parse.test.ts back to clean)
+
+=== item 1: re-confirm green after revert ===
+exit=0
+
+=== item 2: make-fixtures.sh ===
+fixture 'basic' built at /work/code/test/fixtures/basic
+fixture 'patterns' built at /work/code/test/fixtures/patterns
+exit=0
+
+=== item 2: patterns fixture is a real git repo ===
+.git
+exit=0
+=== item 2: basic fixture still builds ===
+.git
+exit=0
+
+=== item 2: fixture-shape predicate (patterns>=1, basic==0) ===
+
+ RUN  v1.6.1 /work/code
+
+ ✓ test/fixture-shape.test.ts  (2 tests) 35ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  23:08:18
+   Duration  470ms (transform 73ms, setup 0ms, collect 56ms, tests 35ms, environment 0ms, prepare 138ms)
+
+exit=0
+
+=== item 3: red count before implementation (recorded earlier this run) ===
+test/oracle.test.ts (grammar cases) against the untouched day-1 matcher: 3 failed / 31 total
+(full capture of that red run is in the BUILD transcript; re-pasting the key line verbatim below)
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  3 failed | 28 passed (31)
+   Start at  23:03:07
+   Duration  1.65s (transform 202ms, setup 0ms, collect 253ms, tests 192ms, environment 1ms, prepare 430ms)
+
+
+=== item 3: final full suite (post-implementation) ===
+
+ RUN  v1.6.1 /work/code
+
+ ✓ test/oracle.test.ts  (18 tests) 86ms
+ ✓ test/fixture-shape.test.ts  (2 tests) 42ms
+ ✓ test/parse.test.ts  (9 tests) 11ms
+ ✓ test/match.test.ts  (4 tests) 10ms
+
+ Test Files  4 passed (4)
+      Tests  33 passed (33)
+   Start at  23:08:20
+   Duration  1.64s (transform 193ms, setup 1ms, collect 237ms, tests 149ms, environment 1ms, prepare 477ms)
+
+exit=0
+
+=== item 3: tsc with class breakdown (final) ===
+exit=0
+(no output above = zero errors)
+
+=== closing: git status --short ===
+(empty above = clean tree)
+=== closing: git log origin/main..HEAD ===
+(empty above = fully pushed)
