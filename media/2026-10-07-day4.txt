@@ -1,0 +1,107 @@
+=== ignoretrace day 4 close-out capture — 2026-10-07 ===
+
+--- Step 0: sandbox + tool versions ---
+8fd122f88e7d
+v18.19.1
+git version 2.43.0
+
+--- Item 1: four-fixture build + edges rev-parse ---
+fixture 'basic' built at /work/code/test/fixtures/basic
+fixture 'patterns' built at /work/code/test/fixtures/patterns
+fixture 'nested' built at /work/code/test/fixtures/nested
+fixture 'edges' built at /work/code/test/fixtures/edges
+
+.git
+
+--- Item 1: all eight edges paths, plain check-ignore rc + -v output ---
+root-only.txt : plain rc=0  -v: .gitignore:1:/root-only.txt	root-only.txt
+sub/root-only.txt : plain rc=1  -v: (no match, rc=1)
+dir/x.txt : plain rc=0  -v: .gitignore:2:/dir/	dir/x.txt
+sub/dir/y.txt : plain rc=1  -v: (no match, rc=1)
+build/sub/deep.tmp : plain rc=0  -v: .gitignore:3:build/	build/sub/deep.tmp
+vendor/keep.me : plain rc=0  -v: .gitignore:5:vendor/	vendor/keep.me
+notes.tmp : plain rc=0  -v: .gitignore:4:*.tmp	notes.tmp
+plain.md : plain rc=1  -v: (no match, rc=1)
+
+--- Item 1: leading-slash fixture-shape predicate counts (from vitest output below) ---
+edges leading-slash rule-line count >= 3 (asserted); basic == 0 (falsification)
+edges leading-slash deciding-rule: see vitest stdout below (decided=2 notDecided=6)
+
+--- Item 2: recorded red count (before leading-slash fix) ---
+Run against the untouched day-3 tree (commit 6457e44, before src/parse.ts fix):
+  4 failed / 39 total in test/oracle.test.ts
+  Failures: root-only.txt (file-shaped), dir/x.txt (dir-shaped),
+            build/sub/deep.tmp, vendor/keep.me (item 3 defect, leaked in
+            via the single edges source, as designed)
+
+--- Item 2: near-miss assertions (post-fix) ---
+sub/root-only.txt NOT ignored (leading slash did not become unanchored): PASS
+sub/dir/y.txt NOT ignored (directory-form near-miss): PASS
+
+--- Item 3: recorded red count (shared red run with item 2) ---
+  2 failed / 39 total — build/sub/deep.tmp, vendor/keep.me
+  (parent-exclusion winner bug, pre-existing since day 3 REFLECT)
+
+--- Item 3: three named winners (post-fix) ---
+build/sub/deep.tmp: won=.gitignore:3:build/ ; *.tmp entry=lost-parent-excluded : PASS
+vendor/keep.me:     won=.gitignore:5:vendor/ ; !vendor/keep.me entry=lost-parent-excluded, negated=true : PASS
+notes.tmp (control): won=.gitignore:4:*.tmp : PASS
+
+--- Item 3: won/negated invariant branch counts (all four fixtures) ---
+ignored & won.negated=false:        20
+not-ignored & no won entry:          17
+not-ignored & won.negated=true:       4
+(all three non-zero — invariant is not inert)
+
+--- Item 3: build/* side-by-side measurement (carried finding, not a 4th item) ---
+git:        ignored=true winner={file:.gitignore,line:1,pattern:build/*}
+ignoretrace: ignored=true winner=undefined
+Verdict agrees; named winner diverges for a rule that excludes an
+ancestor without itself matching the deeper path. Left alone per
+TODAY.md instruction; recorded here as a carried finding.
+
+--- Final: npx vitest run ---
+
+ RUN  v1.6.1 /work/code
+
+stdout | test/oracle.test.ts > oracle: cross-file precedence trace (nested fixture, day 3) > delete-a-rule probe: deleting a won rule flips git's answer, deleting a lost-outranked rule holds it (>= 1 of each)
+delete-a-rule probe: flips=4 holds=4
+
+stdout | test/oracle.test.ts > oracle: parent-exclusion winner (edges fixture, day 4 item 3) > build/* side-by-side measurement: an ancestor-excluding rule that does not itself match the deeper path
+build/* side-by-side: git ignored=true winner={"file":".gitignore","line":1,"pattern":"build/*"} | ignoretrace ignored=true winner=undefined
+
+stdout | test/oracle.test.ts > oracle: won/negated invariant over every path of every fixture (day 4 item 3) > ignored=>won.negated=false, not-ignored=>no-won-or-won.negated=true, all three branches non-zero
+won/negated invariant: ignored+won.negated=false=20 not-ignored+no-won=17 not-ignored+won.negated=true=4
+
+ ✓ test/oracle.test.ts  (45 tests) 653ms
+ ✓ test/fixture-shape.test.ts  (7 tests) 163ms
+stdout | test/fixture-shape.test.ts > fixture shape: 'edges' leading-slash deciding rule, both directions (day 4) > at least 2 ignored and 1 not-ignored among the eight edges paths
+edges leading-slash deciding: decided=2 notDecided=6
+
+stdout | test/fixture-shape.test.ts > fixture shape: cross-file precedence (day 3's subject) > 'nested' yields at least 3 cross-file decisions, with both verdicts present
+nested cross-file decisions: total=4 ignored=3 notIgnored=1
+
+stdout | test/fixture-shape.test.ts > fixture shape: cross-file precedence (day 3's subject) > 'patterns' yields none — the falsification
+patterns cross-file decisions: total=0
+
+ ✓ test/parse.test.ts  (9 tests) 13ms
+ ✓ test/match.test.ts  (4 tests) 8ms
+
+ Test Files  4 passed (4)
+      Tests  65 passed (65)
+   Start at  19:22:51
+   Duration  2.65s (transform 392ms, setup 1ms, collect 480ms, tests 837ms, environment 1ms, prepare 462ms)
+
+
+--- Final: npx tsc --noEmit ---
+tsc exit=0
+
+--- Final: npx tsc -p tsconfig.orphan.json --noEmit (class breakdown) ---
+orphan guard exit=0 (empty breakdown above = clean)
+
+--- Final: git status --short ---
+?? media/2026-10-07-day4.txt
+(empty above = clean)
+
+--- Final: git log origin/main..HEAD ---
+(empty above = fully pushed)
