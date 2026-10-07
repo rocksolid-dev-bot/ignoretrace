@@ -129,6 +129,9 @@ describe("fixture shape: cross-file precedence (day 3's subject)", () => {
   it("'nested' yields at least 3 cross-file decisions, with both verdicts present", () => {
     const fixtureDir = path.join(__dirname, "fixtures", "nested");
     const result = crossFileDecisions(fixtureDir);
+    console.log(
+      `nested cross-file decisions: total=${result.total} ignored=${result.ignored} notIgnored=${result.notIgnored}`,
+    );
     expect(result.total).toBeGreaterThanOrEqual(3);
     expect(result.ignored).toBeGreaterThanOrEqual(1);
     expect(result.notIgnored).toBeGreaterThanOrEqual(1);
@@ -136,6 +139,8 @@ describe("fixture shape: cross-file precedence (day 3's subject)", () => {
 
   it("'patterns' yields none — the falsification", () => {
     const fixtureDir = path.join(__dirname, "fixtures", "patterns");
-    expect(crossFileDecisions(fixtureDir).total).toBe(0);
+    const total = crossFileDecisions(fixtureDir).total;
+    console.log(`patterns cross-file decisions: total=${total}`);
+    expect(total).toBe(0);
   });
 });

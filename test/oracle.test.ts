@@ -3,10 +3,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { parseIgnoreFile, matchPath, type IgnoreLine } from "../src/index.js";
+import { mkdtempSync, cpSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import {
+  parseIgnoreFile,
+  matchPath,
+  traceDecision,
+  type IgnoreLine,
+  type IgnoreSource,
+  type TraceEntry,
+} from "../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixtureRoot = path.join(__dirname, "fixtures", "basic");
+const nestedRoot = path.join(__dirname, "fixtures", "nested");
 
 /**
  * The oracle has a trap, measured in BRIEF.md and not negotiable:
@@ -213,5 +223,140 @@ describe("oracle: pattern grammar (**, ?, character classes) vs git check-ignore
     const winner = winningRule(patternRules, "src/notes.tmp", false);
     expect(winner).not.toBeNull();
     expect(winner!.line).toBe(1);
+  });
+});
+
+/**
+ * Day 3: cross-file precedence and the trace structure, against the
+ * "nested" fixture (four .gitignore files at different depths — see
+ * test/fixture-shape.test.ts for why "basic"/"patterns" cannot exercise
+ * this). Record red before green (mistake 2): this describe block is
+ * added and run against the day-2 tree, before src/trace.ts exists wired
+ * into src/index.ts, and the failing count goes into the close-out
+ * capture — a suite that was never red proves nothing.
+ */
+describe("oracle: cross-file precedence trace (nested fixture, day 3)", () => {
+  function loadNestedSources(): IgnoreSource[] {
+    const dirs = ["", "a", "a/b", "vendor"];
+    return dirs.map((dir) => {
+      const file = dir === "" ? ".gitignore" : `${dir}/.gitignore`;
+      const text = readFileSync(path.join(nestedRoot, file), "utf8");
+      return { dir, lines: parseIgnoreFile(text) };
+    });
+  }
+
+  let sources: IgnoreSource[];
+  beforeAll(() => {
+    sources = loadNestedSources();
+  });
+
+  // The table from TODAY.md, re-derived from git check-ignore/-v at test
+  // time rather than trusted (mistake 9) — see the per-case assertions.
+  const nestedCases: Array<{ path: string; isDir: boolean }> = [
+    { path: "top.log", isDir: false },
+    { path: "important.log", isDir: false },
+    { path: "a/important.log", isDir: false },
+    { path: "a/notes.txt", isDir: false },
+    { path: "a/b/notes.txt", isDir: false },
+    { path: "a/b/other.txt", isDir: false },
+    { path: "vendor/keep.me", isDir: false },
+    { path: "plain.md", isDir: false },
+  ];
+
+  it.each(nestedCases)(
+    "traceDecision for $path matches git's verdict and winning rule (file:line:pattern)",
+    ({ path: relPath, isDir }) => {
+      const expectedIgnored = gitVerdictIgnored(nestedRoot, relPath);
+      const expectedWinner = gitWinningRule(nestedRoot, relPath);
+      const result = traceDecision(sources, relPath, isDir);
+      expect(result.ignored).toBe(expectedIgnored);
+
+      const won = result.entries.find((e) => e.outcome === "won");
+      if (expectedWinner === null) {
+        expect(won).toBeUndefined();
+      } else {
+        expect(won).toBeDefined();
+        expect(won!.file).toBe(expectedWinner.file);
+        expect(won!.line).toBe(expectedWinner.line);
+        const reconstructed = won!.negated ? `!${won!.pattern}` : won!.pattern;
+        expect(reconstructed).toBe(expectedWinner.pattern);
+      }
+    },
+  );
+
+  it("vendor/keep.me: ignored true, and the !keep.me entry is lost-parent-excluded, not lost-outranked", () => {
+    const result = traceDecision(sources, "vendor/keep.me", false);
+    expect(result.ignored).toBe(true);
+    const negationEntry = result.entries.find(
+      (e) => e.file === "vendor/.gitignore" && e.pattern === "keep.me",
+    );
+    expect(negationEntry).toBeDefined();
+    expect(negationEntry!.outcome).toBe("lost-parent-excluded");
+  });
+
+  // PLAN.md's delete-a-rule probe: the losers are the thing git will not
+  // tell us, so they get verified by two observable claims instead of one
+  // unobservable one. Compared by rule text, never by line number —
+  // deleting a line renumbers everything below it (mistake 3).
+  function makeScratchCopy(): string {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "ignoretrace-nested-scratch-"));
+    cpSync(nestedRoot, dir, { recursive: true });
+    return dir;
+  }
+
+  function deleteRuleLineByText(scratchDir: string, entry: TraceEntry): void {
+    const filePath = path.join(scratchDir, entry.file);
+    const text = readFileSync(filePath, "utf8");
+    const target = entry.negated ? `!${entry.pattern}` : entry.pattern;
+    const lines = text.split("\n");
+    const idx = lines.findIndex((l) => l.trim() === target);
+    if (idx === -1) {
+      throw new Error(`rule text not found while deleting: "${target}" in ${entry.file}`);
+    }
+    lines.splice(idx, 1);
+    writeFileSync(filePath, lines.join("\n"));
+  }
+
+  it("delete-a-rule probe: deleting a won rule flips git's answer, deleting a lost-outranked rule holds it (>= 1 of each)", () => {
+    let flips = 0;
+    let holds = 0;
+
+    for (const { path: relPath, isDir } of nestedCases) {
+      const result = traceDecision(sources, relPath, isDir);
+      if (result.entries.length < 2) continue;
+
+      const originalIgnored = gitVerdictIgnored(nestedRoot, relPath);
+      const originalWinner = gitWinningRule(nestedRoot, relPath);
+
+      for (const entry of result.entries) {
+        if (entry.outcome !== "won" && entry.outcome !== "lost-outranked") continue;
+
+        const scratch = makeScratchCopy();
+        try {
+          deleteRuleLineByText(scratch, entry);
+          const newIgnored = gitVerdictIgnored(scratch, relPath);
+          const newWinner = gitWinningRule(scratch, relPath);
+
+          if (entry.outcome === "won") {
+            const ruleChanged =
+              newIgnored !== originalIgnored ||
+              newWinner?.file !== originalWinner?.file ||
+              newWinner?.pattern !== originalWinner?.pattern;
+            if (ruleChanged) flips++;
+          } else {
+            if (newIgnored === originalIgnored) holds++;
+          }
+        } finally {
+          rmSync(scratch, { recursive: true, force: true });
+        }
+      }
+    }
+
+    // Printed, not just asserted — an all-flip or all-hold count would be
+    // just as green here and would mean the probe never discriminated
+    // (mistake 64).
+    console.log(`delete-a-rule probe: flips=${flips} holds=${holds}`);
+    expect(flips).toBeGreaterThanOrEqual(1);
+    expect(holds).toBeGreaterThanOrEqual(1);
   });
 });
