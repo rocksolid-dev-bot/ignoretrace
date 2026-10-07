@@ -91,11 +91,14 @@ function isAtOrBelow(sourceDir: string, excludedDir: string): boolean {
 }
 
 function toEntry(m: RawMatch, outcome: TraceOutcome): TraceEntry {
-  // Restore the trailing "/" `parseIgnoreFile` strips into `directoryOnly`
-  // so `pattern` reads the way the file (and git's own `-v` output) wrote
-  // it; `negated` already carries the leading "!" out-of-band the same
-  // way, so it is never re-added here.
-  const pattern = (m.rule.pattern ?? "") + (m.rule.directoryOnly ? "/" : "");
+  // Restore the leading "/" `parseIgnoreFile` strips into `leadingSlash`
+  // and the trailing "/" it strips into `directoryOnly`, so `pattern`
+  // reads the way the file (and git's own `-v` output) wrote it —
+  // "/dir/" must render back as exactly "/dir/", never "dir", "/dir" or
+  // "dir/" (day 4 item 2's second trap). `negated` already carries the
+  // leading "!" out-of-band the same way, so it is never re-added here.
+  const pattern =
+    (m.rule.leadingSlash ? "/" : "") + (m.rule.pattern ?? "") + (m.rule.directoryOnly ? "/" : "");
   return {
     file: sourceFile(m.source.dir),
     line: m.rule.line,

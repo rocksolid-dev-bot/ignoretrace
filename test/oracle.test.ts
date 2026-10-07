@@ -17,6 +17,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixtureRoot = path.join(__dirname, "fixtures", "basic");
 const nestedRoot = path.join(__dirname, "fixtures", "nested");
+const edgesRoot = path.join(__dirname, "fixtures", "edges");
 
 /**
  * The oracle has a trap, measured in BRIEF.md and not negotiable:
@@ -358,5 +359,76 @@ describe("oracle: cross-file precedence trace (nested fixture, day 3)", () => {
     console.log(`delete-a-rule probe: flips=${flips} holds=${holds}`);
     expect(flips).toBeGreaterThanOrEqual(1);
     expect(holds).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Day 4 item 2: a leading-slash pattern currently matches nothing.
+ * `/root-only.txt` and `/dir/` must each decide their path, and must NOT
+ * become unanchored (the near-miss paths sub/root-only.txt,
+ * sub/dir/y.txt must stay not-ignored). Red before green (mistake 2):
+ * this block is written and run against the untouched day-3 tree first —
+ * the recorded failed/total count goes in the close-out capture.
+ */
+describe("oracle: leading-slash patterns (edges fixture, day 4 item 2)", () => {
+  function loadEdgesSource(): IgnoreSource {
+    const text = readFileSync(path.join(edgesRoot, ".gitignore"), "utf8");
+    return { dir: "", lines: parseIgnoreFile(text) };
+  }
+
+  let sources: IgnoreSource[];
+  beforeAll(() => {
+    sources = [loadEdgesSource()];
+  });
+
+  const edgesCases: Array<{ path: string; isDir: boolean }> = [
+    { path: "root-only.txt", isDir: false },
+    { path: "sub/root-only.txt", isDir: false },
+    { path: "dir/x.txt", isDir: false },
+    { path: "sub/dir/y.txt", isDir: false },
+    { path: "build/sub/deep.tmp", isDir: false },
+    { path: "vendor/keep.me", isDir: false },
+    { path: "notes.tmp", isDir: false },
+    { path: "plain.md", isDir: false },
+  ];
+
+  it.each(edgesCases)(
+    "traceDecision for $path matches git's verdict, and for ignored paths the winner matches file/line/pattern byte-for-byte",
+    ({ path: relPath, isDir }) => {
+      const expectedIgnored = gitVerdictIgnored(edgesRoot, relPath);
+      const expectedWinner = gitWinningRule(edgesRoot, relPath);
+      const result = traceDecision(sources, relPath, isDir);
+      expect(result.ignored).toBe(expectedIgnored);
+
+      const won = result.entries.find((e) => e.outcome === "won");
+      if (expectedIgnored) {
+        expect(won).toBeDefined();
+        expect(won!.file).toBe(expectedWinner!.file);
+        expect(won!.line).toBe(expectedWinner!.line);
+        const reconstructed = won!.negated ? `!${won!.pattern}` : won!.pattern;
+        expect(reconstructed).toBe(expectedWinner!.pattern);
+      }
+    },
+  );
+
+  it("sub/root-only.txt is NOT ignored — a leading slash must not become unanchored", () => {
+    expect(gitVerdictIgnored(edgesRoot, "sub/root-only.txt")).toBe(false);
+    expect(traceDecision(sources, "sub/root-only.txt", false).ignored).toBe(false);
+  });
+
+  it("sub/dir/y.txt is NOT ignored — the directory-form near-miss", () => {
+    expect(gitVerdictIgnored(edgesRoot, "sub/dir/y.txt")).toBe(false);
+    expect(traceDecision(sources, "sub/dir/y.txt", false).ignored).toBe(false);
+  });
+
+  it('parseIgnoreFile("/dir/\\n") sets anchored true and directoryOnly true, named separately', () => {
+    const parsed = parseIgnoreFile("/dir/\n");
+    expect(parsed[0].kind).toBe("rule");
+    expect(parsed[0].anchored).toBe(true);
+    expect(parsed[0].directoryOnly).toBe(true);
+    // The new field consumed here, not left an orphan (mistakes 15-17):
+    // exported from src/index.ts via the IgnoreLine interface.
+    expect(parsed[0].leadingSlash).toBe(true);
+    expect(parsed[0].pattern).toBe("dir");
   });
 });

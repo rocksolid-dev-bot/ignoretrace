@@ -9,6 +9,16 @@ export interface IgnoreLine {
   negated?: boolean;
   directoryOnly?: boolean;
   anchored?: boolean;
+  /**
+   * True when the rule's pattern began with an (unescaped) leading "/" in
+   * the file — stripped from `pattern` for matching the same way the
+   * trailing "/" is stripped into `directoryOnly`, and re-added by
+   * `src/trace.ts`'s `toEntry` so the printed pattern reads the way git
+   * itself prints it (leading slash included). Day 4 item 2: without
+   * this flag, stripping the leading slash leaves no record that the
+   * rule must stay *anchored* — the bug this flag exists to prevent.
+   */
+  leadingSlash?: boolean;
 }
 
 /**
@@ -93,6 +103,7 @@ function parseRule(trimmed: string): {
   negated: boolean;
   directoryOnly: boolean;
   anchored: boolean;
+  leadingSlash: boolean;
 } {
   let body = trimmed;
 
@@ -119,10 +130,25 @@ function parseRule(trimmed: string): {
     body = body.slice(0, -1);
   }
 
+  // A leading "/" also anchors the rule to the .gitignore's own directory
+  // (gitignore(5)): strip it from the matching pattern the same way the
+  // trailing "/" is stripped into `directoryOnly`, but — the day-4 item-2
+  // trap — `anchored` must be set explicitly here, true, rather than left
+  // to the `body.includes("/")` check below. Stripped naively, "/dir"
+  // would read as containing no further "/" and come back unanchored,
+  // which would make it match at any depth (`sub/dir`) when git does not.
+  let leadingSlash = false;
+  if (body.startsWith("/")) {
+    leadingSlash = true;
+    body = body.slice(1);
+  }
+
   // Anchored if a "/" appears anywhere before the final character of what
   // remains (i.e. not just a trailing slash, which was already stripped
-  // above). A pattern like "a/b" is anchored; "*.log" is not.
-  const anchored = body.includes("/");
+  // above), OR the pattern had a leading "/" of its own (stripped above,
+  // so it no longer shows up in this scan). A pattern like "a/b" is
+  // anchored; "*.log" is not; "/root.txt" is (leadingSlash).
+  const anchored = leadingSlash || body.includes("/");
 
-  return { pattern: body, negated, directoryOnly, anchored };
+  return { pattern: body, negated, directoryOnly, anchored, leadingSlash };
 }
