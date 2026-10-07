@@ -5,5 +5,12 @@ that matched each path, which one won, and why your negation did nothing.
 
 ## Status
 
-Day 1. Scaffold and the matcher's spine (`parseIgnoreFile`) only — no UI, no full pattern
-grammar, no precedence trace yet.
+Day 2. The matcher's spine (`parseIgnoreFile`), the full single-file pattern grammar (`**` in all
+three positions, character classes, escapes, trailing-space handling), and `matchPath` returning
+every matching rule for a path within one file — no UI yet.
+
+## Limitations
+
+ignoretrace reads only the `.gitignore` files given to it as input. It does not read
+`.git/info/exclude` or a user's `core.excludesFile`, both of which git itself consults — those are
+out of scope.
