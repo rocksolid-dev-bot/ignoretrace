@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -124,6 +125,88 @@ function crossFileDecisions(fixtureDir: string): {
   }
   return { total, ignored, notIgnored };
 }
+
+/**
+ * Day 4 item 1: count rule lines, across every .gitignore file in a
+ * fixture (found by walking, not hand-listed), whose pattern begins with
+ * "/" (after the optional leading "!"). Mechanical, off the fixture's own
+ * files — never off TODAY.md's table.
+ */
+function findGitignoreFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === ".git") continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...findGitignoreFiles(full));
+    } else if (entry.name === ".gitignore") {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+function countLeadingSlashRuleLines(fixtureDir: string): number {
+  let count = 0;
+  for (const file of findGitignoreFiles(fixtureDir)) {
+    const lines = readFileSync(file, "utf8").split(/\r\n|\n|\r/);
+    for (const raw of lines) {
+      const trimmed = raw.replace(/^[ \t]+/, "");
+      if (trimmed === "" || trimmed.startsWith("#")) continue;
+      const body = trimmed.startsWith("!") ? trimmed.slice(1) : trimmed;
+      if (body.startsWith("/")) count++;
+    }
+  }
+  return count;
+}
+
+describe("fixture shape: leading-slash rule lines (day 4, mistake 65)", () => {
+  it("'edges' has at least 3 leading-slash rule lines", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "edges");
+    expect(countLeadingSlashRuleLines(fixtureDir)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("'basic' has none — the falsification", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "basic");
+    expect(countLeadingSlashRuleLines(fixtureDir)).toBe(0);
+  });
+});
+
+/**
+ * Of the eight "edges" paths, the predicate for "decided by a
+ * leading-slash rule" (git's -v names a pattern starting with "/") must
+ * come back >= 2 ignored and >= 1 not-ignored — a fixture that only
+ * agrees in one direction proves nothing (mistake 64).
+ */
+function decidedByLeadingSlash(fixtureDir: string, relPath: string): boolean {
+  const decided = decidingFileAndPattern(fixtureDir, relPath);
+  return decided !== null && decided.pattern.startsWith("/");
+}
+
+describe("fixture shape: 'edges' leading-slash deciding rule, both directions (day 4)", () => {
+  it("at least 2 ignored and 1 not-ignored among the eight edges paths", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "edges");
+    const paths = [
+      "root-only.txt",
+      "sub/root-only.txt",
+      "dir/x.txt",
+      "sub/dir/y.txt",
+      "build/sub/deep.tmp",
+      "vendor/keep.me",
+      "notes.tmp",
+      "plain.md",
+    ];
+    let decided = 0;
+    let notDecided = 0;
+    for (const p of paths) {
+      if (decidedByLeadingSlash(fixtureDir, p)) decided++;
+      else notDecided++;
+    }
+    console.log(`edges leading-slash deciding: decided=${decided} notDecided=${notDecided}`);
+    expect(decided).toBeGreaterThanOrEqual(2);
+    expect(notDecided).toBeGreaterThanOrEqual(1);
+  });
+});
 
 describe("fixture shape: cross-file precedence (day 3's subject)", () => {
   it("'nested' yields at least 3 cross-file decisions, with both verdicts present", () => {

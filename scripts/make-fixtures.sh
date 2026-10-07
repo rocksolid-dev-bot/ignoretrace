@@ -120,3 +120,46 @@ git -C "$FIXTURES_DIR/nested" add -A
 git -C "$FIXTURES_DIR/nested" commit -q -m "fixture: nested tree" --allow-empty
 
 echo "fixture 'nested' built at $FIXTURES_DIR/nested"
+
+# Fixture "edges" — day 4 item 1. No prior fixture has ever held a
+# leading-slash pattern (grep -rn "^/\|^!/" over all seven prior .gitignore
+# files returns rc=1). Root .gitignore only: both of day 4's defects are
+# reachable from a single source, which is the surprising part of defect 2
+# (parent-exclusion winner, exercised here via build/ + *.tmp and
+# vendor/ + !vendor/keep.me).
+rm -rf "$FIXTURES_DIR/edges"
+mkdir -p "$FIXTURES_DIR/edges/dir" \
+         "$FIXTURES_DIR/edges/sub/dir" \
+         "$FIXTURES_DIR/edges/build/sub" \
+         "$FIXTURES_DIR/edges/vendor"
+
+git -C "$FIXTURES_DIR/edges" init -q
+git -C "$FIXTURES_DIR/edges" config user.email "fixture@ignoretrace.local"
+git -C "$FIXTURES_DIR/edges" config user.name "ignoretrace fixtures"
+
+cat > "$FIXTURES_DIR/edges/.gitignore" <<'EOF'
+/root-only.txt
+/dir/
+build/
+*.tmp
+vendor/
+!vendor/keep.me
+\!literal
+/second-root.txt
+EOF
+
+echo "root-only"     > "$FIXTURES_DIR/edges/root-only.txt"
+echo "sub root-only" > "$FIXTURES_DIR/edges/sub/root-only.txt"
+echo "dir x"         > "$FIXTURES_DIR/edges/dir/x.txt"
+echo "sub dir y"     > "$FIXTURES_DIR/edges/sub/dir/y.txt"
+echo "deep tmp"      > "$FIXTURES_DIR/edges/build/sub/deep.tmp"
+echo "keep"          > "$FIXTURES_DIR/edges/vendor/keep.me"
+echo "notes tmp"      > "$FIXTURES_DIR/edges/notes.tmp"
+echo "plain"         > "$FIXTURES_DIR/edges/plain.md"
+echo "literal bang"  > "$FIXTURES_DIR/edges/\!literal"
+echo "second root"   > "$FIXTURES_DIR/edges/second-root.txt"
+
+git -C "$FIXTURES_DIR/edges" add -A
+git -C "$FIXTURES_DIR/edges" commit -q -m "fixture: edges tree (leading slash, parent exclusion)" --allow-empty
+
+echo "fixture 'edges' built at $FIXTURES_DIR/edges"
