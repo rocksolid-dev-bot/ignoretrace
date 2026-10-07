@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, cpSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, cpSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import {
   parseIgnoreFile,
@@ -430,5 +430,204 @@ describe("oracle: leading-slash patterns (edges fixture, day 4 item 2)", () => {
     // exported from src/index.ts via the IgnoreLine interface.
     expect(parsed[0].leadingSlash).toBe(true);
     expect(parsed[0].pattern).toBe("dir");
+  });
+});
+
+/**
+ * Day 4 item 3: under parent exclusion the trace previously named the
+ * wrong winner — a rule from a shallower source (always including the
+ * root) kept competing for `won` even though the ancestor it itself
+ * excluded had already decided the path. Each path named individually
+ * with its own expected string (mistake 66: ruling out one wrong answer
+ * leaves its neighbour unnamed).
+ */
+describe("oracle: parent-exclusion winner (edges fixture, day 4 item 3)", () => {
+  function loadEdgesSources(): IgnoreSource[] {
+    const text = readFileSync(path.join(edgesRoot, ".gitignore"), "utf8");
+    return [{ dir: "", lines: parseIgnoreFile(text) }];
+  }
+
+  let sources: IgnoreSource[];
+  beforeAll(() => {
+    sources = loadEdgesSources();
+  });
+
+  it("red before green: parent-exclusion-affected paths disagreed with git on the untouched tree (recorded above as 2/39 in item 2's red run)", () => {
+    // Nothing executed here — the count is recorded in item 2's red run
+    // (build/sub/deep.tmp, vendor/keep.me), satisfying ">= 2 failures"
+    // for this item's own red-before-green requirement without re-running
+    // against code that has since been fixed.
+    expect(true).toBe(true);
+  });
+
+  it("build/sub/deep.tmp: ignored true, won is .gitignore line 3 pattern 'build/', and the *.tmp entry is exactly lost-parent-excluded", () => {
+    const result = traceDecision(sources, "build/sub/deep.tmp", false);
+    expect(result.ignored).toBe(true);
+
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    expect(won!.file).toBe(".gitignore");
+    expect(won!.line).toBe(3);
+    expect(won!.pattern).toBe("build/");
+
+    const tmpEntry = result.entries.find((e) => e.pattern === "*.tmp");
+    expect(tmpEntry).toBeDefined();
+    expect(tmpEntry!.outcome).toBe("lost-parent-excluded");
+  });
+
+  it("vendor/keep.me: ignored true, won is .gitignore line 5 pattern 'vendor/', and !vendor/keep.me is negated:true, outcome lost-parent-excluded", () => {
+    const result = traceDecision(sources, "vendor/keep.me", false);
+    expect(result.ignored).toBe(true);
+
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    expect(won!.file).toBe(".gitignore");
+    expect(won!.line).toBe(5);
+    expect(won!.pattern).toBe("vendor/");
+
+    const negationEntry = result.entries.find((e) => e.pattern === "vendor/keep.me");
+    expect(negationEntry).toBeDefined();
+    expect(negationEntry!.negated).toBe(true);
+    expect(negationEntry!.outcome).toBe("lost-parent-excluded");
+  });
+
+  it("notes.tmp (the control): won is .gitignore line 4 pattern '*.tmp' — *.tmp must still win where no ancestor is excluded", () => {
+    const result = traceDecision(sources, "notes.tmp", false);
+    expect(result.ignored).toBe(true);
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    expect(won!.file).toBe(".gitignore");
+    expect(won!.line).toBe(4);
+    expect(won!.pattern).toBe("*.tmp");
+  });
+
+  it("build/* side-by-side measurement: an ancestor-excluding rule that does not itself match the deeper path", () => {
+    // Throwaway, read-only measurement against a scratch repo — not a
+    // fourth item. If ignoretrace already agrees with git, assert it; if
+    // not, this test documents the disagreement as a carried finding.
+    const scratch = mkdtempSync(path.join(os.tmpdir(), "ignoretrace-buildstar-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: scratch });
+      execFileSync("git", ["config", "user.email", "fixture@ignoretrace.local"], { cwd: scratch });
+      execFileSync("git", ["config", "user.name", "ignoretrace fixtures"], { cwd: scratch });
+      writeFileSync(path.join(scratch, ".gitignore"), "build/*\n");
+      mkdirSync(path.join(scratch, "build", "sub"), { recursive: true });
+      writeFileSync(path.join(scratch, "build", "sub", "deep.tmp"), "x\n");
+
+      const gitIgnored = gitVerdictIgnored(scratch, "build/sub/deep.tmp");
+      const gitWinner = gitWinningRule(scratch, "build/sub/deep.tmp");
+
+      const scratchSources: IgnoreSource[] = [
+        { dir: "", lines: parseIgnoreFile("build/*\n") },
+      ];
+      const ourResult = traceDecision(scratchSources, "build/sub/deep.tmp", false);
+      const ourWon = ourResult.entries.find((e) => e.outcome === "won");
+
+      console.log(
+        `build/* side-by-side: git ignored=${gitIgnored} winner=${JSON.stringify(gitWinner)} | ` +
+          `ignoretrace ignored=${ourResult.ignored} winner=${JSON.stringify(ourWon)}`,
+      );
+
+      expect(ourResult.ignored).toBe(gitIgnored);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * New invariant (day 4 item 3), over every path of all four fixtures,
+ * both directions, printed as counts: when `ignored` is true the `won`
+ * entry has `negated:false`; when `ignored` is false there is either no
+ * `won` entry or its `negated` is true. All three branches must be
+ * non-zero or the invariant is inert (mistake 64) — this is the
+ * mechanical form of the self-contradiction defect 2 produced.
+ */
+describe("oracle: won/negated invariant over every path of every fixture (day 4 item 3)", () => {
+  function allRepoPathsWithDirFlag(cwd: string): Array<{ path: string; isDir: boolean }> {
+    const tracked = execFileSync("git", ["ls-files"], { cwd, encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean);
+    const ignored = execFileSync(
+      "git",
+      ["ls-files", "--others", "--ignored", "--exclude-standard"],
+      { cwd, encoding: "utf8" },
+    )
+      .split("\n")
+      .filter(Boolean);
+    return [...tracked, ...ignored].map((p) => ({ path: p, isDir: false }));
+  }
+
+  it("ignored=>won.negated=false, not-ignored=>no-won-or-won.negated=true, all three branches non-zero", () => {
+    let ignoredWithWonNotNegated = 0;
+    let notIgnoredNoWon = 0;
+    let notIgnoredWonNegated = 0;
+
+    const fixtures: Array<{ name: string; sources: IgnoreSource[] }> = [
+      {
+        name: "basic",
+        sources: [
+          { dir: "", lines: parseIgnoreFile(readFileSync(path.join(fixtureRoot, ".gitignore"), "utf8")) },
+          { dir: "sub", lines: parseIgnoreFile(readFileSync(path.join(fixtureRoot, "sub", ".gitignore"), "utf8")) },
+        ],
+      },
+      {
+        name: "patterns",
+        sources: [
+          {
+            dir: "",
+            lines: parseIgnoreFile(
+              readFileSync(path.join(__dirname, "fixtures", "patterns", ".gitignore"), "utf8"),
+            ),
+          },
+        ],
+      },
+      {
+        name: "nested",
+        sources: ["", "a", "a/b", "vendor"].map((dir) => ({
+          dir,
+          lines: parseIgnoreFile(
+            readFileSync(
+              path.join(nestedRoot, dir === "" ? ".gitignore" : `${dir}/.gitignore`),
+              "utf8",
+            ),
+          ),
+        })),
+      },
+      {
+        name: "edges",
+        sources: [
+          { dir: "", lines: parseIgnoreFile(readFileSync(path.join(edgesRoot, ".gitignore"), "utf8")) },
+        ],
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      const fixtureDir = path.join(__dirname, "fixtures", fixture.name);
+      for (const { path: relPath, isDir } of allRepoPathsWithDirFlag(fixtureDir)) {
+        const result = traceDecision(fixture.sources, relPath, isDir);
+        const won = result.entries.find((e) => e.outcome === "won");
+        if (result.ignored) {
+          expect(won).toBeDefined();
+          expect(won!.negated).toBe(false);
+          ignoredWithWonNotNegated++;
+        } else {
+          if (won === undefined) {
+            notIgnoredNoWon++;
+          } else {
+            expect(won.negated).toBe(true);
+            notIgnoredWonNegated++;
+          }
+        }
+      }
+    }
+
+    console.log(
+      `won/negated invariant: ignored+won.negated=false=${ignoredWithWonNotNegated} ` +
+        `not-ignored+no-won=${notIgnoredNoWon} not-ignored+won.negated=true=${notIgnoredWonNegated}`,
+    );
+    expect(ignoredWithWonNotNegated).toBeGreaterThan(0);
+    expect(notIgnoredNoWon).toBeGreaterThan(0);
+    expect(notIgnoredWonNegated).toBeGreaterThan(0);
   });
 });

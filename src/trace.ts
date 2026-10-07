@@ -86,10 +86,6 @@ function ancestorsOf(targetPath: string): string[] {
   return ancestors;
 }
 
-function isAtOrBelow(sourceDir: string, excludedDir: string): boolean {
-  return sourceDir === excludedDir || sourceDir.startsWith(`${excludedDir}/`);
-}
-
 function toEntry(m: RawMatch, outcome: TraceOutcome): TraceEntry {
   // Restore the leading "/" `parseIgnoreFile` strips into `leadingSlash`
   // and the trailing "/" it strips into `directoryOnly`, so `pattern`
@@ -116,33 +112,38 @@ function toEntry(m: RawMatch, outcome: TraceOutcome): TraceEntry {
  *
  * Behaviour 3 (parent exclusion): walking ancestor directories shallowest
  * -> deepest and deciding each as a directory with behaviours 1-2 only.
- * At the first ignored ancestor, the path is ignored and every rule from
- * a source at or below that ancestor is `lost-parent-excluded` — git
- * never reads those files, because it never descends into the excluded
- * directory. `matchPath` already extends a directory-only rule to match a
- * deeper file via its ancestor segment (`**\/cache` deciding `cache/x.o`
- * at `isDir=false`); that is reused here via `rawMatches`, never
- * re-implemented, so the excluding rule always itself re-appears as a
- * match on the full path from an unaffected (shallower) source.
+ * At the first ignored ancestor, git never descends into it, so it is
+ * the rule that decided *that ancestor* — not whatever rule happens to
+ * sort last among the full path's own matches — that decides `path`
+ * too (day 4 item 3's fix: the previous version scoped exclusion by
+ * *source directory*, so a rule from a shallower source, always
+ * including the root, kept competing for `won` even though an ancestor
+ * it itself excluded had already settled the question). Every other
+ * matched rule on the full path is `lost-parent-excluded`: widened from
+ * "git never read this file" to "this rule was powerless because an
+ * ancestor was excluded", which is what the label has always meant for a
+ * negation sitting inside the excluded directory itself. `matchPath`
+ * already extends a directory-only rule to match a deeper file via its
+ * ancestor segment (`**\/cache` deciding `cache/x.o` at `isDir=false`);
+ * that is reused here via `rawMatches`, never re-implemented.
  */
 export function traceDecision(sources: IgnoreSource[], path: string, isDir: boolean): TraceResult {
-  let excludedAt: string | null = null;
+  let ancestorWinner: RawMatch | null = null;
   for (const ancestor of ancestorsOf(path)) {
-    if (isIgnoredByRawMatches(rawMatches(sources, ancestor, true))) {
-      excludedAt = ancestor;
+    const ancestorMatches = rawMatches(sources, ancestor, true);
+    if (isIgnoredByRawMatches(ancestorMatches)) {
+      ancestorWinner = ancestorMatches[ancestorMatches.length - 1];
       break;
     }
   }
 
   const all = rawMatches(sources, path, isDir);
 
-  if (excludedAt !== null) {
-    const unaffected = all.filter((m) => !isAtOrBelow(m.source.dir, excludedAt!));
-    const winner = unaffected.length > 0 ? unaffected[unaffected.length - 1] : null;
-
+  if (ancestorWinner !== null) {
+    const winner = ancestorWinner;
     const entries = all.map((m) => {
-      if (isAtOrBelow(m.source.dir, excludedAt!)) return toEntry(m, "lost-parent-excluded");
-      return toEntry(m, m === winner ? "won" : "lost-outranked");
+      const isWinner = m.source === winner.source && m.rule === winner.rule;
+      return toEntry(m, isWinner ? "won" : "lost-parent-excluded");
     });
 
     return { path, ignored: true, entries };
