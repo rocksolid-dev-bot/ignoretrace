@@ -74,3 +74,49 @@ git -C "$FIXTURES_DIR/patterns" add -A
 git -C "$FIXTURES_DIR/patterns" commit -q -m "fixture: patterns tree" --allow-empty
 
 echo "fixture 'patterns' built at $FIXTURES_DIR/patterns"
+
+# Fixture "nested" — cross-file precedence (day 3's subject). Four
+# .gitignore files at different depths so that a single resolved path can
+# be decided by root, middle, or deepest file, and one case (vendor/keep.me)
+# where a parent directory exclusion makes a deeper negation powerless
+# (lost-parent-excluded, not lost-outranked — git never reads vendor/.gitignore
+# because it never descends into the excluded vendor/ directory).
+rm -rf "$FIXTURES_DIR/nested"
+mkdir -p "$FIXTURES_DIR/nested/a/b" "$FIXTURES_DIR/nested/vendor"
+
+git -C "$FIXTURES_DIR/nested" init -q
+git -C "$FIXTURES_DIR/nested" config user.email "fixture@ignoretrace.local"
+git -C "$FIXTURES_DIR/nested" config user.name "ignoretrace fixtures"
+
+cat > "$FIXTURES_DIR/nested/.gitignore" <<'EOF'
+*.log
+!important.log
+vendor/
+EOF
+
+cat > "$FIXTURES_DIR/nested/a/.gitignore" <<'EOF'
+important.log
+*.txt
+EOF
+
+cat > "$FIXTURES_DIR/nested/a/b/.gitignore" <<'EOF'
+!notes.txt
+EOF
+
+cat > "$FIXTURES_DIR/nested/vendor/.gitignore" <<'EOF'
+!keep.me
+EOF
+
+echo "top"       > "$FIXTURES_DIR/nested/top.log"
+echo "important" > "$FIXTURES_DIR/nested/important.log"
+echo "a-important" > "$FIXTURES_DIR/nested/a/important.log"
+echo "a-notes"   > "$FIXTURES_DIR/nested/a/notes.txt"
+echo "ab-notes"  > "$FIXTURES_DIR/nested/a/b/notes.txt"
+echo "ab-other"  > "$FIXTURES_DIR/nested/a/b/other.txt"
+echo "keep"      > "$FIXTURES_DIR/nested/vendor/keep.me"
+echo "plain"     > "$FIXTURES_DIR/nested/plain.md"
+
+git -C "$FIXTURES_DIR/nested" add -A
+git -C "$FIXTURES_DIR/nested" commit -q -m "fixture: nested tree" --allow-empty
+
+echo "fixture 'nested' built at $FIXTURES_DIR/nested"

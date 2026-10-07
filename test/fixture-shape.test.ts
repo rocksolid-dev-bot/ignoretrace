@@ -84,3 +84,58 @@ describe("fixture shape: unanchored-wildcard-decides-nested-path (mistake 63)", 
     expect(countUnanchoredRootNestedDecisions(fixtureDir)).toBe(0);
   });
 });
+
+/**
+ * Cross-file precedence (day 3's subject): a path counts when the file
+ * `git check-ignore -v --no-index` names as deciding it is a *nested*
+ * .gitignore, not the root one. The verdict (ignored / not ignored) is
+ * read from plain `git check-ignore` (rc 0/1) and never from `-v`'s exit
+ * code — `-v` returns 0 for a winning *negation* too (mistake 61's trap,
+ * measured in BRIEF.md), so an all-ignored or all-not-ignored result from
+ * this predicate would prove nothing about which direction was exercised.
+ */
+function isIgnoredPlain(cwd: string, relPath: string): boolean {
+  try {
+    execFileSync("git", ["check-ignore", "--no-index", relPath], { cwd, encoding: "utf8" });
+    return true; // rc=0: ignored
+  } catch {
+    return false; // rc=1: not ignored
+  }
+}
+
+function crossFileDecisions(fixtureDir: string): {
+  total: number;
+  ignored: number;
+  notIgnored: number;
+} {
+  let total = 0;
+  let ignored = 0;
+  let notIgnored = 0;
+  for (const relPath of allRepoPaths(fixtureDir)) {
+    const decided = decidingFileAndPattern(fixtureDir, relPath);
+    if (decided === null) continue; // nothing matched it
+    if (decided.file === ".gitignore") continue; // root decided it, not cross-file
+    total++;
+    if (isIgnoredPlain(fixtureDir, relPath)) {
+      ignored++;
+    } else {
+      notIgnored++;
+    }
+  }
+  return { total, ignored, notIgnored };
+}
+
+describe("fixture shape: cross-file precedence (day 3's subject)", () => {
+  it("'nested' yields at least 3 cross-file decisions, with both verdicts present", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "nested");
+    const result = crossFileDecisions(fixtureDir);
+    expect(result.total).toBeGreaterThanOrEqual(3);
+    expect(result.ignored).toBeGreaterThanOrEqual(1);
+    expect(result.notIgnored).toBeGreaterThanOrEqual(1);
+  });
+
+  it("'patterns' yields none — the falsification", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "patterns");
+    expect(crossFileDecisions(fixtureDir).total).toBe(0);
+  });
+});
