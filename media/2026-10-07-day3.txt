@@ -1,0 +1,79 @@
+=== ignoretrace day 3 close-out capture 2026-10-07 ===
+
+--- step 0: versions ---
+hostname: 8fd122f88e7d
+node -v: v18.19.1
+git --version: git version 2.43.0
+
+--- item 1: README before/after ---
+(before, captured pre-edit)
+=== BEFORE ===
+exit=1
+0
+--- Status section before ---
+## Status
+
+Day 1. Scaffold and the matcher's spine (`parseIgnoreFile`) only — no UI, no full pattern
+grammar, no precedence trace yet.
+--- grep -z (cross-line) check ---
+no full pattern grammar
+
+(after)
+grep -n "no full pattern grammar" README.md; exit=$?
+exit=1
+core.excludesFile count: 1
+info/exclude count: 1
+## Status section:
+## Status
+
+Day 2. The matcher's spine (`parseIgnoreFile`), the full single-file pattern grammar (`**` in all
+three positions, character classes, escapes, trailing-space handling), and `matchPath` returning
+every matching rule for a path within one file — no UI yet.
+
+precedence count in Status section: 0
+
+--- item 2: fixtures ---
+fixture 'basic' built at /work/code/test/fixtures/basic
+fixture 'patterns' built at /work/code/test/fixtures/patterns
+fixture 'nested' built at /work/code/test/fixtures/nested
+exit=0
+basic rev-parse --git-dir: .git
+patterns rev-parse --git-dir: .git
+nested rev-parse --git-dir: .git
+
+--- item 3: trace ---
+recorded red before green: 10 failed / 45 total (traceDecision not yet wired into index.ts, captured in /tmp/item3_red.txt on host before the export was added to src/index.ts)
+after wiring: see final vitest run below, 45/45
+
+--- final test runs (with printed counts) ---
+
+ RUN  v1.6.1 /work/code
+
+stdout | test/oracle.test.ts > oracle: cross-file precedence trace (nested fixture, day 3) > delete-a-rule probe: deleting a won rule flips git's answer, deleting a lost-outranked rule holds it (>= 1 of each)
+delete-a-rule probe: flips=4 holds=4
+
+ ✓ test/oracle.test.ts  (28 tests) 529ms
+ ✓ test/fixture-shape.test.ts  (4 tests) 116ms
+stdout | test/fixture-shape.test.ts > fixture shape: cross-file precedence (day 3's subject) > 'nested' yields at least 3 cross-file decisions, with both verdicts present
+nested cross-file decisions: total=4 ignored=3 notIgnored=1
+
+stdout | test/fixture-shape.test.ts > fixture shape: cross-file precedence (day 3's subject) > 'patterns' yields none — the falsification
+patterns cross-file decisions: total=0
+
+ ✓ test/parse.test.ts  (9 tests) 10ms
+ ✓ test/match.test.ts  (4 tests) 8ms
+
+ Test Files  4 passed (4)
+      Tests  45 passed (45)
+   Start at  15:24:12
+   Duration  2.28s (transform 313ms, setup 0ms, collect 375ms, tests 663ms, environment 1ms, prepare 423ms)
+
+
+--- tsc checks ---
+tsc --noEmit exit=0
+tsc -p tsconfig.orphan.json --noEmit exit=0
+
+--- git state ---
+git status --short:
+?? media/2026-10-07-day3.txt
+git log origin/main..HEAD:
