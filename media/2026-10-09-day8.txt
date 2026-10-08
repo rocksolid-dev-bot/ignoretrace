@@ -1,0 +1,79 @@
+=== Step 0 ===
+hostname: 8fd122f88e7d
+node: v18.19.1
+git: git version 2.43.0
+ls node_modules | head -1 (from /work/code): @esbuild
+
+=== Item 1 acceptance (commit db897ea) ===
+$ npx tsc -p tsconfig.orphan.json --noEmit; echo "guard=$?"
+guard=0
+$ npx vitest run 2>&1 | tail -3
+ Test Files  4 passed (4)
+      Tests  69 passed (69)
+$ git show --stat HEAD | tail -4
+ scripts/make-fixtures.sh   | 40 ++++++++++++++++++++++++++++++++++++++++
+ test/fixture-shape.test.ts | 29 +++++++++++++++++++++++++++++
+ 2 files changed, 69 insertions(+)
+
+=== Item 2 — red first (against untouched tree, before trace.ts fix) ===
+$ npx vitest run -t "day 8 item 2"
+ ❯ build/sub/deep.tmp: ignored true, won is .gitignore line 2 pattern 'build/*'
+   AssertionError: expected undefined not to be undefined
+     572|     expect(result.ignored).toBe(true);
+     573|     const won = result.entries.find((e) => e.outcome === "won");
+     574|     expect(won).toBeDefined();
+         |                 ^
+ ❯ ignored-path invariant extended: ... branch counts printed non-zero
+   stdout: "ignored-path invariant (day 8 item 2): ignored+won=23 ignored+no-won=1 not-ignored=24"
+   AssertionError: expected 1 to be +0 // Object.is equality
+ Test Files  1 failed | 3 skipped (4)
+      Tests  2 failed | 2 passed | 69 skipped (73)
+Failed for the right reason: a missing `won` entry (the ancestor-winner drop), not a wrong
+pattern. One (fixture, path) pair measured ignored+no-won=1 against the untouched tree.
+
+=== Item 2 acceptance (commit 0b523d7, after fix) ===
+$ npx tsc --noEmit; echo "tsc=$?"
+tsc=0
+$ npx tsc -p tsconfig.orphan.json --noEmit; echo "guard=$?"
+guard=0
+$ npx vitest run 2>&1 | tail -4
+ Test Files  4 passed (4)
+      Tests  73 passed (73)
+ignored-path invariant (day 8 item 2): ignored+won=24 ignored+no-won=0 not-ignored=24
+$ git show --stat HEAD | tail -4
+ src/trace.ts        |  14 ++++-
+ test/oracle.test.ts | 147 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 160 insertions(+), 1 deletion(-)
+
+=== Item 3 acceptance (commit 30f5c28) ===
+$ npx tsc -p tsconfig.orphan.json --noEmit; echo "guard=$?"
+guard=0
+$ npx vitest run 2>&1 | tail -10
+ ✓ test/oracle.test.ts  (51 tests)
+ ✓ test/fixture-shape.test.ts  (9 tests)
+ ✓ test/rows.test.ts  (9 tests)
+ ✓ test/parse.test.ts  (9 tests)
+ ✓ test/match.test.ts  (4 tests)
+ Test Files  5 passed (5)
+      Tests  82 passed (82)
+$ git show --stat HEAD | tail -4
+ src/index.ts      |  2 ++
+ src/rows.ts       | 39 ++++++++++++++++++++++++++
+ test/rows.test.ts | 84 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 125 insertions(+)
+
+=== Final checks (end of day 8, HEAD 30f5c28) ===
+$ npx tsc --noEmit; echo "tsc=$?"
+tsc=0
+$ npx tsc -p tsconfig.orphan.json --noEmit; echo "guard=$?"
+guard=0  (class breakdown: empty)
+$ npx vitest run 2>&1 | tail -10
+ Test Files  5 passed (5)
+      Tests  82 passed (82)
+$ git status --short
+(clean)
+$ git log origin/main..HEAD
+(empty — fully pushed)
+
+All three items shipped and pushed: db897ea (item 1), 0b523d7 (item 2), 30f5c28 (item 3).
+No blockers. No skill fetched. No DEPLOY item (not demo-ready, no UI yet).
