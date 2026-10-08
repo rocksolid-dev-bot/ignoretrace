@@ -158,10 +158,22 @@ export function traceDecision(sources: IgnoreSource[], path: string, isDir: bool
 
   if (ancestorWinner !== null) {
     const winner = ancestorWinner;
-    const entries = all.map((m) => {
+    const mapped = all.map((m) => {
       const isWinner = m.source === winner.source && m.rule === winner.rule;
       return toEntry(m, isWinner ? "won" : "lost-parent-excluded");
     });
+
+    // The winner was decided against an ancestor directory, not against
+    // `path` itself (e.g. `build/*` matching `build/sub` but not
+    // `build/sub/deep.tmp`) — so it may be entirely absent from `all`,
+    // which is built by matching `path` directly. Day 8 item 2: the
+    // ignored-path invariant requires a `won` entry to *exist*; dropping
+    // the ancestor winner here is the verdict with no winning rule this
+    // product may never produce (BRIEF.md). If the winner is already
+    // present among `mapped` (it matched the path itself too), nothing
+    // changes; otherwise its own entry is added, marked "won".
+    const winnerPresent = mapped.some((e) => e.outcome === "won");
+    const entries = winnerPresent ? mapped : [...mapped, toEntry(winner, "won")];
 
     return { path, ignored: true, entries };
   }

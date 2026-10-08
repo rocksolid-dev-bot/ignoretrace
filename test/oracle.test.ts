@@ -540,6 +540,153 @@ describe("oracle: parent-exclusion winner (edges fixture, day 4 item 3)", () => 
 });
 
 /**
+ * Day 8 item 2: the last known verdict-level defect — an ancestor-
+ * excluding rule (`build/*`) that does not itself match the deeper path
+ * being decided. The ancestor walk sets `ancestorWinner`, but the
+ * returned `entries` were built by mapping `all` (matches against the
+ * full path itself); `build/*` never matches `build/sub/deep.tmp`
+ * directly, so `all` is empty and the winner is dropped — `ignored:true`
+ * with zero entries and no `won` at all, the one output this product may
+ * never produce (BRIEF.md). Reproduced here for the first time in a
+ * committed fixture (`lines`, built day 6, consumed day 8 item 1).
+ */
+describe("oracle: ancestor winner present as 'won' even when it doesn't match the path itself (day 8 item 2)", () => {
+  const linesRoot = path.join(__dirname, "fixtures", "lines");
+
+  function loadLinesSources(): IgnoreSource[] {
+    const text = readFileSync(path.join(linesRoot, ".gitignore"), "utf8");
+    return [{ dir: "", lines: parseIgnoreFile(text) }];
+  }
+
+  let sources: IgnoreSource[];
+  beforeAll(() => {
+    sources = loadLinesSources();
+  });
+
+  it("build/sub/deep.tmp: ignored true, won is .gitignore line 2 pattern 'build/*' — git's own answer", () => {
+    expect(gitVerdictIgnored(linesRoot, "build/sub/deep.tmp")).toBe(true);
+    const gitWinner = gitWinningRule(linesRoot, "build/sub/deep.tmp");
+    expect(gitWinner).toEqual({ file: ".gitignore", line: 2, pattern: "build/*" });
+
+    const result = traceDecision(sources, "build/sub/deep.tmp", false);
+    expect(result.ignored).toBe(true);
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    expect(won!.file).toBe(".gitignore");
+    expect(won!.line).toBe(2);
+    expect(won!.pattern).toBe("build/*");
+  });
+
+  it("regression, direction 1: build/top.txt in 'lines' still wins on '.gitignore:2:build/*' — the rule matches the path itself here", () => {
+    const result = traceDecision(sources, "build/top.txt", false);
+    expect(result.ignored).toBe(true);
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    expect(won!.file).toBe(".gitignore");
+    expect(won!.line).toBe(2);
+    expect(won!.pattern).toBe("build/*");
+  });
+
+  it("regression, direction 2: build/sub/deep.tmp in 'edges' still wins on '.gitignore:3:build/' — day 4's directory-rule answer, unmoved", () => {
+    const edgesSources: IgnoreSource[] = [
+      { dir: "", lines: parseIgnoreFile(readFileSync(path.join(edgesRoot, ".gitignore"), "utf8")) },
+    ];
+    const result = traceDecision(edgesSources, "build/sub/deep.tmp", false);
+    expect(result.ignored).toBe(true);
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    expect(won!.file).toBe(".gitignore");
+    expect(won!.line).toBe(3);
+    expect(won!.pattern).toBe("build/");
+  });
+
+  it("ignored-path invariant extended: every path of all five fixtures where ignored=true has a 'won' entry, branch counts printed non-zero", () => {
+    function allRepoPathsWithDirFlag(cwd: string): Array<{ path: string; isDir: boolean }> {
+      const tracked = execFileSync("git", ["ls-files"], { cwd, encoding: "utf8" })
+        .split("\n")
+        .filter(Boolean);
+      const ignoredPaths = execFileSync(
+        "git",
+        ["ls-files", "--others", "--ignored", "--exclude-standard"],
+        { cwd, encoding: "utf8" },
+      )
+        .split("\n")
+        .filter(Boolean);
+      return [...tracked, ...ignoredPaths].map((p) => ({ path: p, isDir: false }));
+    }
+
+    const fixtures: Array<{ name: string; sources: IgnoreSource[] }> = [
+      {
+        name: "basic",
+        sources: [
+          { dir: "", lines: parseIgnoreFile(readFileSync(path.join(fixtureRoot, ".gitignore"), "utf8")) },
+          { dir: "sub", lines: parseIgnoreFile(readFileSync(path.join(fixtureRoot, "sub", ".gitignore"), "utf8")) },
+        ],
+      },
+      {
+        name: "patterns",
+        sources: [
+          {
+            dir: "",
+            lines: parseIgnoreFile(
+              readFileSync(path.join(__dirname, "fixtures", "patterns", ".gitignore"), "utf8"),
+            ),
+          },
+        ],
+      },
+      {
+        name: "nested",
+        sources: ["", "a", "a/b", "vendor"].map((dir) => ({
+          dir,
+          lines: parseIgnoreFile(
+            readFileSync(
+              path.join(nestedRoot, dir === "" ? ".gitignore" : `${dir}/.gitignore`),
+              "utf8",
+            ),
+          ),
+        })),
+      },
+      {
+        name: "edges",
+        sources: [
+          { dir: "", lines: parseIgnoreFile(readFileSync(path.join(edgesRoot, ".gitignore"), "utf8")) },
+        ],
+      },
+      { name: "lines", sources: loadLinesSources() },
+    ];
+
+    let ignoredWithWon = 0;
+    let ignoredWithoutWon = 0;
+    let notIgnored = 0;
+
+    for (const fixture of fixtures) {
+      const fixtureDir = path.join(__dirname, "fixtures", fixture.name);
+      for (const { path: relPath, isDir } of allRepoPathsWithDirFlag(fixtureDir)) {
+        const result = traceDecision(fixture.sources, relPath, isDir);
+        const won = result.entries.find((e) => e.outcome === "won");
+        if (result.ignored) {
+          if (won === undefined) {
+            ignoredWithoutWon++;
+          } else {
+            ignoredWithWon++;
+          }
+        } else {
+          notIgnored++;
+        }
+      }
+    }
+
+    console.log(
+      `ignored-path invariant (day 8 item 2): ignored+won=${ignoredWithWon} ` +
+        `ignored+no-won=${ignoredWithoutWon} not-ignored=${notIgnored}`,
+    );
+    expect(ignoredWithWon).toBeGreaterThan(0);
+    expect(notIgnored).toBeGreaterThan(0);
+    expect(ignoredWithoutWon).toBe(0);
+  });
+});
+
+/**
  * New invariant (day 4 item 3), over every path of all four fixtures,
  * both directions, printed as counts: when `ignored` is true the `won`
  * entry has `negated:false`; when `ignored` is false there is either no
