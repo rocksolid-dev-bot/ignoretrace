@@ -279,8 +279,10 @@ describe("oracle: cross-file precedence trace (nested fixture, day 3)", () => {
         expect(won).toBeDefined();
         expect(won!.file).toBe(expectedWinner.file);
         expect(won!.line).toBe(expectedWinner.line);
-        const reconstructed = won!.negated ? `!${won!.pattern}` : won!.pattern;
-        expect(reconstructed).toBe(expectedWinner.pattern);
+        // `won!.pattern` must already carry its own "!" prefix in-band (day
+        // 5 item 1) — compared directly, never reconstructed here, or a
+        // missing "!" in toEntry's own rendering would go unnoticed.
+        expect(won!.pattern).toBe(expectedWinner.pattern);
       }
     },
   );
@@ -289,7 +291,7 @@ describe("oracle: cross-file precedence trace (nested fixture, day 3)", () => {
     const result = traceDecision(sources, "vendor/keep.me", false);
     expect(result.ignored).toBe(true);
     const negationEntry = result.entries.find(
-      (e) => e.file === "vendor/.gitignore" && e.pattern === "keep.me",
+      (e) => e.file === "vendor/.gitignore" && e.pattern === "!keep.me",
     );
     expect(negationEntry).toBeDefined();
     expect(negationEntry!.outcome).toBe("lost-parent-excluded");
@@ -308,7 +310,10 @@ describe("oracle: cross-file precedence trace (nested fixture, day 3)", () => {
   function deleteRuleLineByText(scratchDir: string, entry: TraceEntry): void {
     const filePath = path.join(scratchDir, entry.file);
     const text = readFileSync(filePath, "utf8");
-    const target = entry.negated ? `!${entry.pattern}` : entry.pattern;
+    // `entry.pattern` already renders its own "!" (and leading/trailing
+    // "/") in-band (day 5 item 1), so it matches the raw gitignore line
+    // text directly — no manual reconstruction needed here.
+    const target = entry.pattern;
     const lines = text.split("\n");
     const idx = lines.findIndex((l) => l.trim() === target);
     if (idx === -1) {
@@ -405,8 +410,7 @@ describe("oracle: leading-slash patterns (edges fixture, day 4 item 2)", () => {
         expect(won).toBeDefined();
         expect(won!.file).toBe(expectedWinner!.file);
         expect(won!.line).toBe(expectedWinner!.line);
-        const reconstructed = won!.negated ? `!${won!.pattern}` : won!.pattern;
-        expect(reconstructed).toBe(expectedWinner!.pattern);
+        expect(won!.pattern).toBe(expectedWinner!.pattern);
       }
     },
   );
@@ -485,7 +489,7 @@ describe("oracle: parent-exclusion winner (edges fixture, day 4 item 3)", () => 
     expect(won!.line).toBe(5);
     expect(won!.pattern).toBe("vendor/");
 
-    const negationEntry = result.entries.find((e) => e.pattern === "vendor/keep.me");
+    const negationEntry = result.entries.find((e) => e.pattern === "!vendor/keep.me");
     expect(negationEntry).toBeDefined();
     expect(negationEntry!.negated).toBe(true);
     expect(negationEntry!.outcome).toBe("lost-parent-excluded");
@@ -629,5 +633,148 @@ describe("oracle: won/negated invariant over every path of every fixture (day 4 
     expect(ignoredWithWonNotNegated).toBeGreaterThan(0);
     expect(notIgnoredNoWon).toBeGreaterThan(0);
     expect(notIgnoredWonNegated).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Day 5 item 1: every negated winner renders without its "!" (`toEntry`
+ * re-adds the leading "/" and trailing "/" it stripped, but deliberately
+ * not the "!", per its own doc comment). No prior test reaches this: the
+ * byte-for-byte winner checks above either reconstruct the "!" manually
+ * (passing regardless of what `toEntry` actually renders) or are gated on
+ * `expectedIgnored`/`expectedWinner !== null` in ways that still only ever
+ * exercised a handful of cases. This block widens the comparison to EVERY
+ * (fixture, path) where `git check-ignore -v --no-index` exits 0 — ignored
+ * or not — and compares the printed `file:line:pattern` byte-for-byte
+ * against `${won.file}:${won.line}:${won.pattern}`, with no manual "!"
+ * reconstruction on either side. Two counts are printed so the comparison
+ * cannot be inert (mistake 64): paths compared that are ignored, and paths
+ * compared that are not ignored (required >= 4 — that subset is the one no
+ * test has ever reached).
+ */
+describe("oracle: full winner render vs git -v, every path where -v exits 0 (day 5 item 1)", () => {
+  function allRepoPathsWithDirFlag(cwd: string): Array<{ path: string; isDir: boolean }> {
+    const tracked = execFileSync("git", ["ls-files"], { cwd, encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean);
+    const ignored = execFileSync(
+      "git",
+      ["ls-files", "--others", "--ignored", "--exclude-standard"],
+      { cwd, encoding: "utf8" },
+    )
+      .split("\n")
+      .filter(Boolean);
+    return [...tracked, ...ignored].map((p) => ({ path: p, isDir: false }));
+  }
+
+  function loadFixtures(): Array<{ name: string; sources: IgnoreSource[] }> {
+    return [
+      {
+        name: "basic",
+        sources: [
+          { dir: "", lines: parseIgnoreFile(readFileSync(path.join(fixtureRoot, ".gitignore"), "utf8")) },
+          {
+            dir: "sub",
+            lines: parseIgnoreFile(readFileSync(path.join(fixtureRoot, "sub", ".gitignore"), "utf8")),
+          },
+        ],
+      },
+      {
+        name: "patterns",
+        sources: [
+          {
+            dir: "",
+            lines: parseIgnoreFile(
+              readFileSync(path.join(__dirname, "fixtures", "patterns", ".gitignore"), "utf8"),
+            ),
+          },
+        ],
+      },
+      {
+        name: "nested",
+        sources: ["", "a", "a/b", "vendor"].map((dir) => ({
+          dir,
+          lines: parseIgnoreFile(
+            readFileSync(
+              path.join(nestedRoot, dir === "" ? ".gitignore" : `${dir}/.gitignore`),
+              "utf8",
+            ),
+          ),
+        })),
+      },
+      {
+        name: "edges",
+        sources: [
+          { dir: "", lines: parseIgnoreFile(readFileSync(path.join(edgesRoot, ".gitignore"), "utf8")) },
+        ],
+      },
+    ];
+  }
+
+  it("rendered won entry (file:line:pattern) matches git -v byte-for-byte for every path -v matches, both directions covered", () => {
+    const fixtures = loadFixtures();
+    let ignoredCompared = 0;
+    let notIgnoredCompared = 0;
+    const failures: string[] = [];
+
+    for (const fixture of fixtures) {
+      const fixtureDir = path.join(__dirname, "fixtures", fixture.name);
+      for (const { path: relPath, isDir } of allRepoPathsWithDirFlag(fixtureDir)) {
+        const gitWinner = gitWinningRule(fixtureDir, relPath);
+        if (gitWinner === null) continue; // -v exits 1: nothing matched at all
+        const expected = `${gitWinner.file}:${gitWinner.line}:${gitWinner.pattern}`;
+
+        const expectedIgnored = gitVerdictIgnored(fixtureDir, relPath);
+        if (expectedIgnored) ignoredCompared++;
+        else notIgnoredCompared++;
+
+        const result = traceDecision(fixture.sources, relPath, isDir);
+        const won = result.entries.find((e) => e.outcome === "won");
+        const rendered = won ? `${won.file}:${won.line}:${won.pattern}` : "<no won entry>";
+
+        if (rendered !== expected) {
+          failures.push(`${fixture.name}/${relPath}: expected "${expected}" got "${rendered}"`);
+        }
+      }
+    }
+
+    console.log(
+      `full winner render: ignoredCompared=${ignoredCompared} notIgnoredCompared=${notIgnoredCompared} ` +
+        `failures=${failures.length}`,
+    );
+    if (failures.length > 0) console.log(failures.join("\n"));
+
+    expect(ignoredCompared).toBeGreaterThan(0);
+    expect(notIgnoredCompared).toBeGreaterThanOrEqual(4);
+    expect(failures).toEqual([]);
+  });
+});
+
+/**
+ * Day 5 item 1 criterion 4: the `\!literal` trap, measured not reasoned.
+ * `test/fixtures/edges/.gitignore` line 7 is `\!literal` and the fixture
+ * contains a file named `!literal`; that rule parses to `negated:false`,
+ * `pattern:"!literal"`, so the fix must leave it rendering `!literal` and
+ * never `!!literal`. Exact bytes of git's own `-v` output compared against
+ * ignoretrace's rendered winner for the same path.
+ */
+describe("oracle: the \\!literal trap (edges fixture, day 5 item 1 criterion 4)", () => {
+  it("git check-ignore -v and ignoretrace's rendered winner are byte-identical for the literal '!literal' path", () => {
+    const gitWinner = gitWinningRule(edgesRoot, "!literal");
+    expect(gitWinner).not.toBeNull();
+    const gitRendered = `${gitWinner!.file}:${gitWinner!.line}:${gitWinner!.pattern}`;
+
+    const sources: IgnoreSource[] = [
+      { dir: "", lines: parseIgnoreFile(readFileSync(path.join(edgesRoot, ".gitignore"), "utf8")) },
+    ];
+    const result = traceDecision(sources, "!literal", false);
+    const won = result.entries.find((e) => e.outcome === "won");
+    expect(won).toBeDefined();
+    const ourRendered = `${won!.file}:${won!.line}:${won!.pattern}`;
+
+    console.log(`!literal byte comparison: git="${gitRendered}" ignoretrace="${ourRendered}"`);
+    expect(ourRendered).toBe(gitRendered);
+    expect(won!.negated).toBe(false);
+    expect(won!.pattern).toBe("\\!literal");
   });
 });

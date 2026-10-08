@@ -91,10 +91,27 @@ function toEntry(m: RawMatch, outcome: TraceOutcome): TraceEntry {
   // and the trailing "/" it strips into `directoryOnly`, so `pattern`
   // reads the way the file (and git's own `-v` output) wrote it —
   // "/dir/" must render back as exactly "/dir/", never "dir", "/dir" or
-  // "dir/" (day 4 item 2's second trap). `negated` already carries the
-  // leading "!" out-of-band the same way, so it is never re-added here.
+  // "dir/" (day 4 item 2's second trap). Day 5 item 1: a negated winner
+  // must render its own "!" too, in-band in `pattern` (not left for a
+  // caller to reconstruct from the separate `negated` field) — that is
+  // the string that answers "why is this file not ignored?", the
+  // product's whole pitch.
+  const rawPattern = m.rule.pattern ?? "";
+  // A "rule"-kind line's pattern can only ever begin with a literal "!"
+  // or "#" via gitignore's own escape ("\!" or "\#"): a true leading "!"
+  // is stripped into `negated` before `pattern` is set, and an unescaped
+  // leading "#" would have been classified as a comment line, never a
+  // rule at all. So restoring exactly one backslash here whenever an
+  // unnegated pattern starts with "!" or "#" reproduces git's own `-v`
+  // output byte-for-byte, including the `\!literal` case (day 5 item 1
+  // criterion 4) — never double-escaping, never dropping it.
+  const escapedLiteral = !m.rule.negated && (rawPattern.startsWith("!") || rawPattern.startsWith("#"));
   const pattern =
-    (m.rule.leadingSlash ? "/" : "") + (m.rule.pattern ?? "") + (m.rule.directoryOnly ? "/" : "");
+    (m.rule.negated ? "!" : "") +
+    (m.rule.leadingSlash ? "/" : "") +
+    (escapedLiteral ? "\\" : "") +
+    rawPattern +
+    (m.rule.directoryOnly ? "/" : "");
   return {
     file: sourceFile(m.source.dir),
     line: m.rule.line,
