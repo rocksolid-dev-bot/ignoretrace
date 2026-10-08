@@ -163,3 +163,43 @@ git -C "$FIXTURES_DIR/edges" add -A
 git -C "$FIXTURES_DIR/edges" commit -q -m "fixture: edges tree (leading slash, parent exclusion)" --allow-empty
 
 echo "fixture 'edges' built at $FIXTURES_DIR/edges"
+
+# Fixture "lines" — day 6 item 2. All eight prior .gitignore files have
+# zero comment lines and zero blank lines, so day 1's 1-based line-number
+# preservation has never been falsifiable: with no comments and no blanks
+# the Nth rule always sits on line N. This root .gitignore has 2 comment
+# lines and 3 blank lines, so the three rule lines sit on lines 2, 5 and 8
+# — none of which equals the rule's 1-based index among rule lines (1, 2, 3).
+# `build/*` is placed here deliberately (day 6 item 3's subject): no prior
+# fixture contains it, and it must not move once item 3 depends on its line
+# number.
+rm -rf "$FIXTURES_DIR/lines"
+mkdir -p "$FIXTURES_DIR/lines/build/sub" "$FIXTURES_DIR/lines/src"
+
+git -C "$FIXTURES_DIR/lines" init -q
+git -C "$FIXTURES_DIR/lines" config user.email "fixture@ignoretrace.local"
+git -C "$FIXTURES_DIR/lines" config user.name "ignoretrace fixtures"
+
+cat > "$FIXTURES_DIR/lines/.gitignore" <<'EOF'
+# build output
+build/*
+
+# logs
+*.log
+
+
+!keep.log
+EOF
+
+mkdir -p "$FIXTURES_DIR/lines/build/sub"
+echo "deep tmp"  > "$FIXTURES_DIR/lines/build/sub/deep.tmp"
+echo "top"       > "$FIXTURES_DIR/lines/build/top.txt"
+echo "app log"   > "$FIXTURES_DIR/lines/app.log"
+echo "src log"   > "$FIXTURES_DIR/lines/src/app.log"
+echo "keep"      > "$FIXTURES_DIR/lines/keep.log"
+echo "notes"     > "$FIXTURES_DIR/lines/notes.txt"
+
+git -C "$FIXTURES_DIR/lines" add -A
+git -C "$FIXTURES_DIR/lines" commit -q -m "fixture: lines tree (comments, blanks, non-identity line numbers)" --allow-empty
+
+echo "fixture 'lines' built at $FIXTURES_DIR/lines"

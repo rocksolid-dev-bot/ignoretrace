@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parseIgnoreFile } from "../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -205,6 +206,34 @@ describe("fixture shape: 'edges' leading-slash deciding rule, both directions (d
     console.log(`edges leading-slash deciding: decided=${decided} notDecided=${notDecided}`);
     expect(decided).toBeGreaterThanOrEqual(2);
     expect(notDecided).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Day 8 item 1: closes the orphan import. `lines`' root .gitignore has 2
+ * comment lines and 3 blank lines before its first rule, so the three
+ * rule lines (2, 5, 8) are not the same sequence as their 1-based rule
+ * indices among rule lines (1, 2, 3) — the first fixture where the two
+ * differ. `basic` is the falsification: every one of its rule lines
+ * equals its own rule index, because it has no comments or blanks above
+ * its rules.
+ */
+function ruleLinesAndIndicesDiffer(fixtureDir: string): boolean {
+  const content = readFileSync(path.join(fixtureDir, ".gitignore"), "utf8");
+  const parsed = parseIgnoreFile(content);
+  const ruleLines = parsed.filter((l) => l.kind === "rule");
+  return ruleLines.some((rule, idx) => rule.line !== idx + 1);
+}
+
+describe("fixture shape: rule line numbers vs rule indices (day 8 item 1)", () => {
+  it("'lines' rule lines are not the same sequence as their 1-based rule indices", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "lines");
+    expect(ruleLinesAndIndicesDiffer(fixtureDir)).toBe(true);
+  });
+
+  it("'basic' rule lines equal their rule indices — the falsification", () => {
+    const fixtureDir = path.join(__dirname, "fixtures", "basic");
+    expect(ruleLinesAndIndicesDiffer(fixtureDir)).toBe(false);
   });
 });
 
