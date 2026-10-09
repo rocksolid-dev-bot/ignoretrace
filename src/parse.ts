@@ -43,16 +43,20 @@ export interface IgnoreLine {
  */
 /**
  * Measured against git directly (not assumed from a description, mistake
- * 9): trailing spaces/tabs are stripped unless escaped with a backslash,
- * in which case the backslash is consumed and the space is kept literal
- * — `foo.txt   ` ignores `foo.txt`, but `foo.txt\ ` (escaped) ignores only
- * the literal `foo.txt ` (trailing space and all), not `foo.txt`. Leading
- * whitespace is unaffected by this function; it is trimmed separately by
- * the caller, matching day-1 behavior (out of today's scope).
+ * 9): trailing spaces are stripped unless escaped with a backslash, in
+ * which case the backslash is consumed and the space is kept literal —
+ * `foo.txt   ` ignores `foo.txt`, but `foo.txt\ ` (escaped) ignores only
+ * the literal `foo.txt ` (trailing space and all), not `foo.txt`. A
+ * trailing *tab* is gitignore(5)'s "trailing spaces" are stripped unless
+ * escaped" — tabs are left alone, full stop: `b.o<TAB>` does not strip to
+ * `b.o`, and git answers `b.o` **not ignored** (mistake 78 — the day-9
+ * oracle). Leading whitespace is unaffected by this function; it is
+ * trimmed separately by the caller, matching day-1 behavior (out of
+ * today's scope).
  */
 function stripTrailingUnescapedSpaces(s: string): string {
   let result = s;
-  while (result.length > 0 && (result.endsWith(" ") || result.endsWith("\t"))) {
+  while (result.length > 0 && result.endsWith(" ")) {
     let backslashes = 0;
     let idx = result.length - 2;
     while (idx >= 0 && result[idx] === "\\") {

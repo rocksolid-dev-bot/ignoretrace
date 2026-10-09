@@ -88,4 +88,15 @@ describe("parseIgnoreFile", () => {
     const result = parseIgnoreFile("bar.txt\\ ");
     expect(result[0]).toMatchObject({ pattern: "bar.txt " });
   });
+
+  // Measured directly against git (scratch repo, mistake 9): a `.gitignore`
+  // line "b.o\t" (a real trailing tab, confirmed with `od -c`) leaves git
+  // answering "not ignored" for a file named "b.o" (rc=1) — gitignore(5)
+  // strips trailing *spaces*, not tabs. A trailing tab must be retained in
+  // the pattern, not stripped like a trailing space (mistake 78: the prior
+  // doc comment and both existing tests here covered only spaces).
+  it("retains a trailing tab in a pattern (not stripped like a trailing space)", () => {
+    const result = parseIgnoreFile("b.o\t");
+    expect(result[0]).toMatchObject({ pattern: "b.o\t" });
+  });
 });
