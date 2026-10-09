@@ -925,3 +925,43 @@ describe("oracle: the \\!literal trap (edges fixture, day 5 item 1 criterion 4)"
     expect(won!.pattern).toBe("\\!literal");
   });
 });
+
+/**
+ * Day 10 item 1: the carried WIP (`parse.ts`'s `trailingSpaceEscaped`,
+ * `trace.ts`'s backslash reinsertion) measured against git, not re-derived.
+ * `.gitignore` line `c.o\ ` — a literal trailing space kept only because
+ * it is backslash-escaped. git's own `-v` output prints the escape back:
+ * `.gitignore:3:c.o\ `. Scratch repo, not a committed fixture — this is a
+ * single oracle case, not a fixture addition.
+ */
+describe("oracle: escaped trailing space renders with its backslash (day 10 item 1)", () => {
+  it("'c.o ' (escaped trailing space): git and ignoretrace's rendered winner are byte-identical", () => {
+    const scratch = mkdtempSync(path.join(os.tmpdir(), "ignoretrace-trailingspace-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: scratch });
+      execFileSync("git", ["config", "user.email", "fixture@ignoretrace.local"], { cwd: scratch });
+      execFileSync("git", ["config", "user.name", "ignoretrace fixtures"], { cwd: scratch });
+      writeFileSync(path.join(scratch, ".gitignore"), "a.o\nb.o\nc.o\\ \n");
+      writeFileSync(path.join(scratch, "a.o"), "x\n");
+      writeFileSync(path.join(scratch, "b.o"), "x\n");
+      writeFileSync(path.join(scratch, "c.o "), "x\n");
+
+      const gitWinner = gitWinningRule(scratch, "c.o ");
+      expect(gitWinner).not.toBeNull();
+      const gitRendered = `${gitWinner!.file}:${gitWinner!.line}:${gitWinner!.pattern}`;
+
+      const text = readFileSync(path.join(scratch, ".gitignore"), "utf8");
+      const sources: IgnoreSource[] = [{ dir: "", lines: parseIgnoreFile(text) }];
+      const result = traceDecision(sources, "c.o ", false);
+      const won = result.entries.find((e) => e.outcome === "won");
+      expect(won).toBeDefined();
+      const ourRendered = `${won!.file}:${won!.line}:${won!.pattern}`;
+
+      console.log(`escaped trailing space byte comparison: git="${gitRendered}" ignoretrace="${ourRendered}"`);
+      expect(ourRendered).toBe(gitRendered);
+      expect(gitRendered).toBe(".gitignore:3:c.o\\ ");
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

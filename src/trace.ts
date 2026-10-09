@@ -106,11 +106,20 @@ function toEntry(m: RawMatch, outcome: TraceOutcome): TraceEntry {
   // output byte-for-byte, including the `\!literal` case (day 5 item 1
   // criterion 4) — never double-escaping, never dropping it.
   const escapedLiteral = !m.rule.negated && (rawPattern.startsWith("!") || rawPattern.startsWith("#"));
+  // Day 9 item 2: a trailing space kept only because it was escaped
+  // (`parseIgnoreFile`'s `trailingSpaceEscaped`) needs its backslash put
+  // back before that space — git's own `-v` output prints "c.o\ ", not
+  // "c.o ". `rawPattern` already ends in the literal space (the escape
+  // only ever consumes the backslash, never the space itself), so the
+  // backslash is inserted immediately before the final character.
+  const restoredTrailingSpace = m.rule.trailingSpaceEscaped
+    ? rawPattern.slice(0, -1) + "\\" + rawPattern.slice(-1)
+    : rawPattern;
   const pattern =
     (m.rule.negated ? "!" : "") +
     (m.rule.leadingSlash ? "/" : "") +
     (escapedLiteral ? "\\" : "") +
-    rawPattern +
+    restoredTrailingSpace +
     (m.rule.directoryOnly ? "/" : "");
   return {
     file: sourceFile(m.source.dir),

@@ -19,6 +19,16 @@ export interface IgnoreLine {
    * rule must stay *anchored* — the bug this flag exists to prevent.
    */
   leadingSlash?: boolean;
+  /**
+   * True when the pattern's trailing space survived only because it was
+   * backslash-escaped in the file (`stripTrailingUnescapedSpaces` kept
+   * the space but consumed the escaping backslash). `src/trace.ts`'s
+   * `toEntry` re-inserts that backslash so the printed pattern reads the
+   * way git's own `-v` output does (`c.o\ `, not `c.o `) — third
+   * instance of this rendering family after the leading `!` (day 5) and
+   * the leading `/` (day 4). Day 9 item 2.
+   */
+  trailingSpaceEscaped?: boolean;
 }
 
 /**
@@ -54,7 +64,7 @@ export interface IgnoreLine {
  * trimmed separately by the caller, matching day-1 behavior (out of
  * today's scope).
  */
-function stripTrailingUnescapedSpaces(s: string): string {
+function stripTrailingUnescapedSpaces(s: string): { result: string; escaped: boolean } {
   let result = s;
   while (result.length > 0 && result.endsWith(" ")) {
     let backslashes = 0;
@@ -68,11 +78,11 @@ function stripTrailingUnescapedSpaces(s: string): string {
       // escapes it, keep the space itself, and stop — git does not
       // cascade past an escaped space to strip further ones behind it.
       result = result.slice(0, result.length - 2) + result.slice(result.length - 1);
-      break;
+      return { result, escaped: true };
     }
     result = result.slice(0, -1);
   }
-  return result;
+  return { result, escaped: false };
 }
 
 export function parseIgnoreFile(text: string): IgnoreLine[] {
@@ -86,7 +96,9 @@ export function parseIgnoreFile(text: string): IgnoreLine[] {
 
   return lines.map((raw, index) => {
     const line = index + 1;
-    const trimmed = stripTrailingUnescapedSpaces(raw.replace(/^[ \t]+/, ""));
+    const { result: trimmed, escaped: trailingSpaceEscaped } = stripTrailingUnescapedSpaces(
+      raw.replace(/^[ \t]+/, ""),
+    );
 
     if (trimmed === "") {
       return { line, raw, kind: "blank" as const };
@@ -98,7 +110,13 @@ export function parseIgnoreFile(text: string): IgnoreLine[] {
       return { line, raw, kind: "comment" as const };
     }
 
-    return { line, raw, kind: "rule" as const, ...parseRule(trimmed) };
+    return {
+      line,
+      raw,
+      kind: "rule" as const,
+      ...parseRule(trimmed),
+      ...(trailingSpaceEscaped ? { trailingSpaceEscaped: true } : {}),
+    };
   });
 }
 
